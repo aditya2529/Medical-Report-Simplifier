@@ -59,7 +59,16 @@ def _parse_json(raw: str) -> list[dict]:
 
 LANGUAGE_INSTRUCTIONS = {
     "english": "Write all explanations in clear, simple English.",
-    "hindi": "Write all explanations in simple Hindi (Devanagari script). Use everyday Hindi words, not medical jargon. Field names (name, what_it_is, your_result, status) must remain in English — only the values for what_it_is and your_result should be in Hindi.",
+    "hindi": (
+        "CRITICAL: Write what_it_is and your_result values in HINDI using DEVANAGARI SCRIPT ONLY (देवनागरी लिपि). "
+        "DO NOT use Roman/English letters for Hindi. "
+        "WRONG (do not do this): 'yeh test aapke shareer mein cholesterol ke matalab karta hai'\n"
+        "CORRECT (do this): 'यह टेस्ट आपके शरीर में कोलेस्ट्रॉल की मात्रा को मापता है।'\n"
+        "Every Hindi word must be written in Devanagari script (अ, आ, क, ख, ग...). "
+        "JSON field names (name, what_it_is, your_result, status) stay in English. "
+        "The 'name' value also stays in English (parameter name from the report). "
+        "Only what_it_is and your_result text content should be in Devanagari Hindi."
+    ),
 }
 
 
@@ -79,9 +88,10 @@ def _explain_batch(batch: list[dict], age_gender_line: str, language: str = "eng
         f"Return ONLY the JSON array. No markdown, no code blocks, no extra text.\n\n"
         f"Parameters:\n{json.dumps(batch, ensure_ascii=False)}"
     )
+    use_multilingual = language != "english"
     for attempt in range(2):
         try:
-            raw = call_llm(prompt)
+            raw = call_llm(prompt, multilingual=use_multilingual)
             result = _parse_json(raw)
             if isinstance(result, list) and len(result) > 0:
                 return result

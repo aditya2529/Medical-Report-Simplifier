@@ -7,8 +7,10 @@ load_dotenv()
 
 # Groq vision model (Llama 4 Scout supports images)
 _VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
-# Groq text model — 8B is fast and has 500K tokens/day free quota
+# Groq text model — 8B is fast for English
 _TEXT_MODEL   = "llama-3.1-8b-instant"
+# Larger model for non-English (Devanagari, etc.) where 8B is too weak
+_MULTILINGUAL_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 
 def _client() -> Groq:
@@ -23,6 +25,7 @@ def call_llm(
     image_bytes: bytes = None,
     mime_type: str = None,
     json_mode: bool = False,
+    multilingual: bool = False,
 ) -> str:
     client = _client()
 
@@ -45,9 +48,9 @@ def call_llm(
         ]
         model = _VISION_MODEL
     else:
-        # Text-only call
+        # Text-only call — use multilingual model for non-English
         messages = [{"role": "user", "content": prompt}]
-        model = _TEXT_MODEL
+        model = _MULTILINGUAL_MODEL if multilingual else _TEXT_MODEL
 
     kwargs = dict(
         model=model,
