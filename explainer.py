@@ -13,41 +13,85 @@ EXPLANATION_PROMPT_TEMPLATE = """You are a friendly health educator explaining l
 
 For each parameter in the JSON array below, return a JSON array with one object per parameter containing:
 - "name": same parameter name as input
-- "what_it_is": one plain sentence explaining what this test measures (no jargon, no abbreviations)
-- "your_result": two sentences explaining what the patient's specific value means for them personally
-- "status": exactly one of "normal", "monitor", or "see_doctor" (use the status already computed in input — do NOT change it)
+- "what_it_is": one plain sentence explaining what this test measures (no jargon)
+- "your_result": two sentences explaining what the patient's specific value means
+- "status": copy the status field exactly from the input — do NOT change it
 
-Rules you must follow:
+Rules:
 - Never say "you have [disease]", never name a diagnosis
-- Never suggest any medication, supplement, or treatment
-- Never use the words: prescribe, diagnose, surgery, emergency
-- Be calm and factual. For "see_doctor" values, say "worth discussing with your doctor" — not alarming language
-- Return ONLY a valid JSON array. No markdown, no commentary.
+- Never suggest any medication or treatment
+- Be calm and factual
+- Return ONLY a valid JSON array. No markdown, no code blocks, no commentary.
 
 Parameters:
 {params_json}"""
 
 
 def _clean_output(text: str) -> str:
+    lower = text.lower()
     for phrase in FORBIDDEN_PHRASES:
-        if phrase in text.lower():
-            text = text.replace(phrase, "[removed]")
+        if phrase in lower:
+            idx = lower.find(phrase)
+            text = text[:idx] + "[see your doctor]" + text[idx + len(phrase):]
+            lower = text.lower()
     return text
 
 
 def _parse_json(raw: str) -> list[dict]:
     raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
+    # Strip markdown code fences
+    if "```" in raw:
+        parts = raw.split("```")
+        for part in parts:
+            part = part.strip()
+            if part.startswith("json"):
+                part = part[4:].strip()
+            if part.startswith("["):
+                raw = part
+                break
+    # Find the JSON array
+    start = raw.find("[")
+    end = raw.rfind("]")
+    if start != -1 and end != -1:
+        raw = raw[start:end + 1]
+    return json.loads(raw)
 
 
-def explain_parameters(params: list[dict], age: int = None, gender: str = None) -> list[dict]:
-    """
-    Takes annotated params (with status), returns list with what_it_is and your_result added.
-    """
+LANGUAGE_INSTRUCTIONS = {
+    "english": "Write all explanations in clear, simple English.",
+    "hindi": "Write all explanations in simple Hindi (Devanagari script). Use everyday Hindi words, not medical jargon. Field names (name, what_it_is, your_result, status) must remain in English — only the values for what_it_is and your_result should be in Hindi.",
+}
+
+
+def _explain_batch(batch: list[dict], age_gender_line: str, language: str = "english") -> list[dict]:
+    context = f"{age_gender_line}\n" if age_gender_line else ""
+    lang_instr = LANGUAGE_INSTRUCTIONS.get(language, LANGUAGE_INSTRUCTIONS["english"])
+    prompt = (
+        f"{context}"
+        f"You are a friendly health educator. For each parameter below, return a JSON array.\n"
+        f"Each item must have exactly these fields:\n"
+        f"- name: same as input (keep in English)\n"
+        f"- what_it_is: 1 plain sentence explaining what this test measures (no jargon)\n"
+        f"- your_result: 2 sentences explaining what this patient's value means\n"
+        f"- status: copy from input unchanged (keep in English: normal/monitor/see_doctor)\n"
+        f"{lang_instr}\n"
+        f"Rules: never diagnose, never suggest medication, be calm.\n"
+        f"Return ONLY the JSON array. No markdown, no code blocks, no extra text.\n\n"
+        f"Parameters:\n{json.dumps(batch, ensure_ascii=False)}"
+    )
+    for attempt in range(2):
+        try:
+            raw = call_llm(prompt)
+            result = _parse_json(raw)
+            if isinstance(result, list) and len(result) > 0:
+                return result
+        except Exception as e:
+            if attempt == 1:
+                raise RuntimeError(f"Explanation failed: {e}")
+    return []
+
+
+def explain_parameters(params: list[dict], age: int = None, gender: str = None, language: str = "english") -> list[dict]:
     if age and gender:
         age_gender_line = f"Patient: {age} year old {gender}."
     elif age:
@@ -55,7 +99,6 @@ def explain_parameters(params: list[dict], age: int = None, gender: str = None) 
     else:
         age_gender_line = ""
 
-    # Only send the fields Gemini needs — strip internal fields
     slim = [
         {
             "name": p["name"],
@@ -70,23 +113,16 @@ def explain_parameters(params: list[dict], age: int = None, gender: str = None) 
     ]
 
     if not slim:
-        return []
+        return params
 
-    prompt = EXPLANATION_PROMPT_TEMPLATE.format(
-        age_gender_line=age_gender_line,
-        params_json=json.dumps(slim, indent=2),
-    )
+    # Process in batches of 8 to avoid token limits
+    BATCH_SIZE = 8
+    explanations = []
+    for i in range(0, len(slim), BATCH_SIZE):
+        batch = slim[i:i + BATCH_SIZE]
+        explanations.extend(_explain_batch(batch, age_gender_line, language=language))
 
-    for attempt in range(2):
-        try:
-            raw = call_llm(prompt)
-            explanations = _parse_json(raw)
-            break
-        except Exception:
-            if attempt == 1:
-                raise RuntimeError("Could not generate explanations. Please try again.")
-
-    # Build lookup by name and merge back
+    # Build lookup and merge
     lookup = {e["name"]: e for e in explanations}
     result = []
     for p in params:

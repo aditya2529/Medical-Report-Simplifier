@@ -57,20 +57,18 @@ def extract_parameters(file_bytes: bytes, mime_type: str) -> tuple[list[dict], s
     report_type = "Lab Report"
 
     for img_bytes, img_mime in page_images:
+        last_error = None
         for attempt in range(2):
             try:
                 raw = call_llm(EXTRACTION_PROMPT, image_bytes=img_bytes, mime_type=img_mime, json_mode=False)
                 params = _parse_json(raw)
                 if not isinstance(params, list) or len(params) == 0:
-                    raise ValueError("Empty parameter list returned")
+                    raise ValueError("Empty parameter list returned by Gemini.")
                 break
-            except Exception:
+            except Exception as e:
+                last_error = e
                 if attempt == 1:
-                    raise ValueError(
-                        "Could not extract data from this report. "
-                        "The image may be too blurry or low quality. "
-                        "Please try re-uploading a clearer photo or use manual entry."
-                    )
+                    raise ValueError(f"Extraction failed: {last_error}")
         for p in params:
             if "report_type" in p and p["report_type"]:
                 report_type = p.pop("report_type")
