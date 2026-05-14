@@ -70,17 +70,17 @@ T = {
         "wa_attention":     "🔴 *Needs Attention:*",
         "wa_monitor":       "🟡 *Worth Monitoring:*",
         "wa_normal":        "🟢 *Normal: {n} values*",
-        "wa_disclaimer":    "_For information only. Always consult your doctor._",
+        "wa_disclaimer":    "_This is not a medical diagnosis. Do not start, stop, or change any medication or treatment based on this. Always consult a qualified doctor._",
 
         # Errors
         "err_prefix":       "❌",
         "err_hint":         "💡 Try a clearer image, or use **manual entry** above.",
 
-        # Disclaimer
+        # Disclaimer (audit #3 — top-of-results banner; "do not act on this")
         "disclaimer": (
-            "**ClarityMed** explains what lab values mean in plain language. "
-            "It is not a medical diagnosis and is not a substitute for professional medical advice. "
-            "Always consult a qualified doctor before making any health decision."
+            "**This is not a medical diagnosis.** "
+            "Do not start, stop, or change any medication or treatment based on this output. "
+            "Always consult a qualified doctor."
         ),
     },
 
@@ -153,17 +153,17 @@ T = {
         "wa_attention":     "🔴 *ध्यान देने योग्य:*",
         "wa_monitor":       "🟡 *निगरानी करें:*",
         "wa_normal":        "🟢 *सामान्य: {n} मान*",
-        "wa_disclaimer":    "_केवल जानकारी के लिए। हमेशा अपने डॉक्टर से सलाह लें।_",
+        "wa_disclaimer":    "_यह कोई चिकित्सकीय निदान नहीं है। इसके आधार पर कोई भी दवा या इलाज शुरू, बंद या बदलें नहीं। हमेशा योग्य डॉक्टर से सलाह लें।_",
 
         # Errors
         "err_prefix":       "❌",
         "err_hint":         "💡 स्पष्ट फ़ोटो के साथ फिर कोशिश करें, या ऊपर **मैन्युअल प्रविष्टि** का उपयोग करें।",
 
-        # Disclaimer
+        # Disclaimer (audit #3 — top-of-results banner; "इसके आधार पर कोई दवा बदलें नहीं")
         "disclaimer": (
-            "**ClarityMed** लैब के मानों का अर्थ सरल भाषा में समझाता है। "
-            "यह कोई चिकित्सकीय निदान नहीं है और न ही किसी पेशेवर चिकित्सा सलाह का विकल्प है। "
-            "स्वास्थ्य संबंधी कोई भी निर्णय लेने से पहले हमेशा योग्य डॉक्टर से सलाह लें।"
+            "**यह कोई चिकित्सकीय निदान नहीं है।** "
+            "इस जानकारी के आधार पर कोई भी दवा या इलाज शुरू, बंद या बदलें नहीं। "
+            "हमेशा योग्य डॉक्टर से सलाह लें।"
         ),
     },
 }

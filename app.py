@@ -60,7 +60,8 @@ st.markdown("""
   .disclaimer-box {
     background:#fff8e1; border-left:4px solid #ffc107;
     padding:13px 16px; border-radius:6px;
-    font-size:0.82rem; color:#555; margin-top:32px;
+    font-size:0.85rem; color:#5a4400; margin-bottom:16px;
+    font-weight:500;
   }
 
   .summary-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
@@ -293,6 +294,9 @@ if st.session_state.params:
     params = st.session_state.params
     report_type = st.session_state.report_type or "Lab Report"
 
+    # Audit #3 — disclaimer renders ABOVE the chips/cards, not below.
+    st.markdown(f'<div class="disclaimer-box">ℹ️ {L("disclaimer")}</div>', unsafe_allow_html=True)
+
     st.markdown(
         f'<div class="detection-banner">✅ {L("detected")}: <b>{report_type}</b> · {len(params)} {L("params_found")}</div>',
         unsafe_allow_html=True,
@@ -343,5 +347,3 @@ if st.session_state.params:
 
     for p in sorted_params:
         render_param_card(p, language)
-
-    st.markdown(f'<div class="disclaimer-box">ℹ️ {L("disclaimer")}</div>', unsafe_allow_html=True)

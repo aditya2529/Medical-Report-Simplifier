@@ -33,8 +33,8 @@ PDF_STRINGS = {
         "result":       "Result",
         "reference":    "Reference",
         "what":         "What it measures:",
-        "footer1":      "ClarityMed explains lab values in plain language. It is not a medical diagnosis.",
-        "footer2":      "Always consult a qualified doctor before making any health decision.",
+        "footer1":      "This is not a medical diagnosis. Do not start, stop, or change any medication or treatment based on this.",
+        "footer2":      "Always consult a qualified doctor.",
     },
     "hindi": {
         "tagline":      "आपकी लैब रिपोर्ट, सरल भाषा में",
@@ -49,8 +49,8 @@ PDF_STRINGS = {
         "result":       "मान",
         "reference":    "संदर्भ सीमा",
         "what":         "यह क्या मापता है:",
-        "footer1":      "यह उपकरण लैब के मानों को सरल भाषा में समझाता है। यह कोई चिकित्सकीय निदान नहीं है।",
-        "footer2":      "स्वास्थ्य संबंधी कोई भी निर्णय लेने से पहले हमेशा योग्य डॉक्टर से सलाह लें।",
+        "footer1":      "यह कोई चिकित्सकीय निदान नहीं है। इसके आधार पर कोई दवा शुरू, बंद या बदलें नहीं।",
+        "footer2":      "हमेशा योग्य डॉक्टर से सलाह लें।",
     },
 }
 

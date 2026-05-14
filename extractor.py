@@ -1,6 +1,7 @@
 import json
 import fitz  # PyMuPDF
 from llm_client import call_llm
+from clinical_thresholds import clinical_danger_status
 
 EXTRACTION_PROMPT = """You are a medical data extraction engine. Extract ALL test parameters from this lab report image or PDF.
 
@@ -8,10 +9,19 @@ For each parameter return a JSON object with exactly these fields:
 - "name": test name as printed (e.g., "Haemoglobin", "HbA1c", "TSH")
 - "value": the patient's result as a string (e.g., "13.2", "Positive", "7.8%")
 - "unit": unit of measurement as printed (e.g., "g/dL", "%", "mIU/L") — empty string if none
-- "ref_low": lower bound of reference range as a number — null if not applicable or not numeric
-- "ref_high": upper bound of reference range as a number — null if not applicable or not numeric
+- "ref_low": lower bound of reference range as a number — null if no lower bound exists
+- "ref_high": upper bound of reference range as a number — null if no upper bound exists
 - "flag": lab's own flag as printed ("H", "L", "HIGH", "LOW", "*", or empty string if none)
 - "report_type": (only on the FIRST parameter) the type of report detected (e.g., "Complete Blood Count", "Lipid Profile", "Thyroid Function Test")
+
+Reference-range parsing rules — MUST follow exactly:
+- "0.4 - 4.0" or "0.4-4.0"   -> ref_low=0.4,  ref_high=4.0
+- "<200" or "Less than 200"  -> ref_low=null, ref_high=200       (only an upper bound)
+- ">40"  or "More than 40"   -> ref_low=40,   ref_high=null      (only a lower bound)
+- "<=7"  or "Up to 7"        -> ref_low=null, ref_high=7
+- ">=12" or "At least 12"    -> ref_low=12,   ref_high=null
+- "Negative" / "Nil" / blank -> ref_low=null, ref_high=null
+NEVER copy one bound into both fields. If only one side of the range exists, the other field MUST be null.
 
 Return ONLY a valid JSON array. No markdown, no explanation, no commentary.
 If a value cannot be read clearly, include the parameter with value set to "UNCLEAR".
@@ -19,7 +29,8 @@ If a value cannot be read clearly, include the parameter with value set to "UNCL
 Example output:
 [
   {"name": "Haemoglobin", "value": "11.2", "unit": "g/dL", "ref_low": 12.0, "ref_high": 16.0, "flag": "L", "report_type": "Complete Blood Count"},
-  {"name": "WBC Count", "value": "7800", "unit": "cells/μL", "ref_low": 4000, "ref_high": 11000, "flag": ""}
+  {"name": "HDL Cholesterol", "value": "38", "unit": "mg/dL", "ref_low": 40, "ref_high": null, "flag": "L"},
+  {"name": "LDL Cholesterol", "value": "168", "unit": "mg/dL", "ref_low": null, "ref_high": 100, "flag": "H"}
 ]"""
 
 
@@ -114,34 +125,50 @@ def extract_parameters(file_bytes: bytes, mime_type: str) -> tuple[list[dict], s
 def compute_status(param: dict) -> str:
     """Returns 'normal', 'monitor', or 'see_doctor'.
 
-    Rule: % deviation is measured relative to the violated bound, not range span.
-    - Within range          → normal
-    - 0-20% above/below bound → monitor (unless lab flagged H/L → see_doctor)
-    - >20% above/below bound → see_doctor
+    Rule order:
+    1. Hardcoded clinical danger table (audit #2 + #30) — fires first; any
+       value crossing a clinical floor returns see_doctor regardless of the
+       lab's printed range.
+    2. Lab flag (H/L/*) or printed range comparison.
+
+    Range handling (audit #1) supports one-sided ranges:
+    - both bounds present  -> in-range vs out-of-range with % deviation
+    - only ref_high (e.g. <200) -> compare against high only
+    - only ref_low  (e.g. >40)  -> compare against low only
+    - neither bound        -> fall back to the lab flag
     """
+    name = param.get("name", "")
+    raw_value = param.get("value", "")
+
+    clinical = clinical_danger_status(name, raw_value)
+    if clinical:
+        return clinical
+
     flag = (param.get("flag") or "").upper()
     flagged = flag in ("H", "L", "HIGH", "LOW", "*")
 
     try:
-        val = float(str(param.get("value", "")).replace("%", "").replace(",", "").strip())
+        val = float(str(raw_value).replace("%", "").replace(",", "").strip())
         low = param.get("ref_low")
         high = param.get("ref_high")
+        low = float(low) if low is not None else None
+        high = float(high) if high is not None else None
 
-        if low is None or high is None:
-            # No numeric range — fall back to lab flag
-            if flagged:
-                return "see_doctor"
+        # No numeric range at all — fall back to lab flag
+        if low is None and high is None:
+            return "see_doctor" if flagged else "normal"
+
+        # Within whichever bounds exist
+        within_low  = low  is None or val >= low
+        within_high = high is None or val <= high
+        if within_low and within_high:
             return "normal"
 
-        low, high = float(low), float(high)
-        if low <= val <= high:
-            return "normal"
-
-        # Calculate % deviation relative to the violated bound
-        if val > high:
+        # Out of range — figure deviation against the violated bound
+        if high is not None and val > high:
             deviation_pct = (val - high) / abs(high) if high != 0 else 1.0
         else:  # val < low
-            deviation_pct = (low - val) / abs(low) if low != 0 else 1.0
+            deviation_pct = (low - val) / abs(low) if low and low != 0 else 1.0
 
         if deviation_pct > 0.20:
             return "see_doctor"
@@ -149,7 +176,7 @@ def compute_status(param: dict) -> str:
         return "see_doctor" if flagged else "monitor"
     except (ValueError, TypeError):
         # Non-numeric value
-        sval = str(param.get("value", "")).upper()
+        sval = str(raw_value).upper()
         if sval in ("POSITIVE", "REACTIVE"):
             return "see_doctor"
         if flagged:
