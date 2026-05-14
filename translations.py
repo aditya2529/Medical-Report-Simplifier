@@ -27,6 +27,26 @@ T = {
             "for processing. No data is stored after the session."
         ),
         "privacy_link":     "Privacy details →",
+        # Trust strip + framing (audit #33, #34)
+        "info_tool_strap":  "ClarityMed is an information tool. It does not diagnose or replace your doctor.",
+        "trust_made_in":    "🇮🇳 Made in India",
+        "trust_no_store":   "🔒 No data stored",
+        "trust_oss":        "📖 Open source",
+        "trust_free":       "🆓 Free forever",
+        "try_sample":       "Try a sample report first:",
+        # About expander + footer (audit #1 #11)
+        "about_title":      "ℹ️ About ClarityMed",
+        "about_body": (
+            "Built by Aditya Kumar — a solo developer in India. ClarityMed reads "
+            "common Indian lab reports and explains each value in plain English or "
+            "Hindi. It is an information tool only, not a clinic or a substitute "
+            "for your doctor. The full source code is on GitHub; the privacy policy "
+            "is linked in the footer."
+        ),
+        "built_by":         "Built by",
+        "footer_about_link":"About",
+        "footer_source":    "Source",
+        "footer_privacy":   "Privacy",
 
         # Manual entry
         "manual_title":     "✏️ Or enter values manually (for handwritten or unclear reports)",
@@ -117,6 +137,25 @@ T = {
             "(Groq, अमेरिका) को भेजी जाएगी। सत्र समाप्त होने के बाद कोई डेटा संग्रहीत नहीं किया जाता।"
         ),
         "privacy_link":     "गोपनीयता विवरण →",
+        # Trust strip + framing (audit #33, #34)
+        "info_tool_strap":  "ClarityMed एक जानकारी देने वाला टूल है। यह न तो निदान करता है और न ही आपके डॉक्टर का विकल्प है।",
+        "trust_made_in":    "🇮🇳 भारत में बना",
+        "trust_no_store":   "🔒 डेटा संग्रहीत नहीं",
+        "trust_oss":        "📖 ओपन सोर्स",
+        "trust_free":       "🆓 हमेशा मुफ़्त",
+        "try_sample":       "पहले एक नमूना रिपोर्ट आज़माएँ:",
+        # About expander + footer (audit #1 #11)
+        "about_title":      "ℹ️ ClarityMed के बारे में",
+        "about_body": (
+            "इसे भारत के एक स्वतंत्र डेवलपर अदित्य कुमार ने बनाया है। ClarityMed आम भारतीय "
+            "लैब रिपोर्टों को पढ़कर हर मान को सरल अंग्रेज़ी या हिंदी में समझाता है। "
+            "यह केवल जानकारी देने वाला टूल है — न क्लिनिक है, न डॉक्टर का विकल्प। "
+            "पूरा सोर्स कोड GitHub पर है; गोपनीयता नीति फ़ुटर में लिंक की गई है।"
+        ),
+        "built_by":         "बनाया गया",
+        "footer_about_link":"परिचय",
+        "footer_source":    "सोर्स कोड",
+        "footer_privacy":   "गोपनीयता",
 
         # Manual entry
         "manual_title":     "✏️ या मानों को मैन्युअली दर्ज करें (हस्तलिखित या अस्पष्ट रिपोर्ट के लिए)",

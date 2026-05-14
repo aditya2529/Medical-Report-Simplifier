@@ -59,6 +59,25 @@ st.markdown("""
     border:1px solid #f1aeb5; border-radius:10px;
     padding:14px 16px; color:#721c24; font-weight:600; margin-bottom:18px;
   }
+
+  /* Audit #33 — info-tool strap line, sits right under hero */
+  .info-strap {
+    background:#eef4fb; border:1px solid #cfe0f3; border-radius:8px;
+    padding:9px 14px; color:#1f3e6b; font-size:0.86rem;
+    margin-bottom:14px; text-align:center;
+  }
+  /* Audit #34 — trust pill strip */
+  .trust-row { display:flex; gap:6px; flex-wrap:wrap; justify-content:center; margin:6px 0 16px; }
+  .trust-pill {
+    background:#f5f7fa; border:1px solid #d8dde5; border-radius:14px;
+    padding:4px 10px; font-size:0.78rem; color:#3c4a5e;
+  }
+  /* Audit #1/#11 — discreet author footer */
+  .author-footer {
+    margin-top:36px; padding-top:14px; border-top:1px solid #eee;
+    text-align:center; font-size:0.78rem; color:#7a7a7a;
+  }
+  .author-footer a { color:#2163a8; text-decoration:none; margin:0 6px; }
   .detection-banner {
     background:#e7f3ff; border:1px solid #b3d7ff; border-radius:10px;
     padding:11px 16px; color:#004085; margin-bottom:14px; font-size:0.95rem;
@@ -191,6 +210,24 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# Audit #33 — "information tool, not a medical service" strap line BEFORE upload
+st.markdown(f'<div class="info-strap">{L("info_tool_strap")}</div>', unsafe_allow_html=True)
+
+# Audit #34 — trust pill strip in the first viewport
+st.markdown(
+    '<div class="trust-row">'
+    f'<span class="trust-pill">{L("trust_made_in")}</span>'
+    f'<span class="trust-pill">{L("trust_no_store")}</span>'
+    f'<span class="trust-pill">{L("trust_oss")}</span>'
+    f'<span class="trust-pill">{L("trust_free")}</span>'
+    '</div>',
+    unsafe_allow_html=True,
+)
+
+# Audit #1 / #11 — "About" expander right above the uploader
+with st.expander(L("about_title"), expanded=False):
+    st.markdown(L("about_body"))
+
 # ── Settings row ──────────────────────────────────────────────────────────────
 col_age, col_gender = st.columns([1, 1])
 with col_age:
@@ -207,9 +244,29 @@ with col_gender:
         gender = en_opts[idx] if idx > 0 else None
 
 # ── Upload section ────────────────────────────────────────────────────────────
-with st.expander(L("photo_tips_title"), expanded=False):
+# Audit #14 — photo tips expanded by default; the single most-preventable failure
+# (blurry photo) was hidden behind one extra tap before.
+with st.expander(L("photo_tips_title"), expanded=True):
     for tip in L("photo_tips"):
         st.markdown(f"- {tip}")
+
+# Audit #31 — let skeptical first-time visitors try a sample without uploading PII
+import os as _os
+SAMPLE_FILES = [
+    ("CBC",     "sample_CBC_report.pdf"),
+    ("Lipid",   "sample_Lipid_report.pdf"),
+    ("Thyroid", "sample_Thyroid_report.pdf"),
+    ("Liver",   "sample_LFT_report.pdf"),
+    ("Kidney",  "sample_KFT_report.pdf"),
+]
+_existing_samples = [(lab, fn) for lab, fn in SAMPLE_FILES if _os.path.exists(fn)]
+if _existing_samples:
+    st.caption(L("try_sample"))
+    cols = st.columns(len(_existing_samples))
+    for col, (label, fname) in zip(cols, _existing_samples):
+        with open(fname, "rb") as f:
+            col.download_button(label, data=f.read(), file_name=fname,
+                                use_container_width=True, key=f"sample_{label}")
 
 uploaded = st.file_uploader(L("uploader_label"), type=["pdf", "jpg", "jpeg", "png", "heic"])
 
@@ -386,3 +443,15 @@ if st.session_state.params:
 
     for p in sorted_params:
         render_param_card(p, language)
+
+# Audit #1/#11 — author footer with real identity, GitHub source, privacy link.
+# Renders on EVERY page state (with or without a parsed report).
+st.markdown(
+    '<div class="author-footer">'
+    f'{L("built_by")} <b>Aditya Kumar</b> · '
+    f'<a href="https://github.com/aditya2529/Medical-Report-Simplifier" target="_blank">{L("footer_source")}</a> · '
+    f'<a href="https://github.com/aditya2529/Medical-Report-Simplifier/blob/main/PRIVACY.md" target="_blank">{L("footer_privacy")}</a> · '
+    f'<a href="mailto:aditya2529@gmail.com">aditya2529@gmail.com</a>'
+    '</div>',
+    unsafe_allow_html=True,
+)
