@@ -32,13 +32,45 @@ def _pdf_to_images(pdf_bytes: bytes) -> list[tuple[bytes, str]]:
     return images
 
 
-def _parse_json(raw: str) -> list[dict]:
+def _parse_json(raw: str):
+    """Robustly extract JSON array or object from LLM output.
+
+    Handles: markdown code fences, surrounding prose, leading/trailing junk.
+    """
     raw = raw.strip()
+    # Strip markdown code fences
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw.strip())
+        raw = raw.strip()
+
+    # Try direct parse first
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Find first '[' or '{' and matching close bracket
+    for open_ch, close_ch in [("[", "]"), ("{", "}")]:
+        start = raw.find(open_ch)
+        if start == -1:
+            continue
+        # Find matching close bracket (handles nested)
+        depth = 0
+        for i in range(start, len(raw)):
+            if raw[i] == open_ch:
+                depth += 1
+            elif raw[i] == close_ch:
+                depth -= 1
+                if depth == 0:
+                    candidate = raw[start:i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break  # try other bracket type
+    # If all else fails, re-raise the original error
+    return json.loads(raw)
 
 
 def extract_parameters(file_bytes: bytes, mime_type: str) -> tuple[list[dict], str]:
@@ -80,35 +112,47 @@ def extract_parameters(file_bytes: bytes, mime_type: str) -> tuple[list[dict], s
 
 
 def compute_status(param: dict) -> str:
-    """Returns 'normal', 'monitor', or 'see_doctor'."""
+    """Returns 'normal', 'monitor', or 'see_doctor'.
+
+    Rule: % deviation is measured relative to the violated bound, not range span.
+    - Within range          → normal
+    - 0-20% above/below bound → monitor (unless lab flagged H/L → see_doctor)
+    - >20% above/below bound → see_doctor
+    """
     flag = (param.get("flag") or "").upper()
-    if flag in ("H", "L", "HIGH", "LOW", "*"):
-        # lab explicitly flagged — check how far outside
-        pass  # fall through to numeric check
+    flagged = flag in ("H", "L", "HIGH", "LOW", "*")
 
     try:
-        val = float(str(param.get("value", "")).replace("%", "").strip())
+        val = float(str(param.get("value", "")).replace("%", "").replace(",", "").strip())
         low = param.get("ref_low")
         high = param.get("ref_high")
+
         if low is None or high is None:
-            return "normal" if not flag else "monitor"
+            # No numeric range — fall back to lab flag
+            if flagged:
+                return "see_doctor"
+            return "normal"
 
         low, high = float(low), float(high)
         if low <= val <= high:
             return "normal"
-        span = high - low
-        if span == 0:
+
+        # Calculate % deviation relative to the violated bound
+        if val > high:
+            deviation_pct = (val - high) / abs(high) if high != 0 else 1.0
+        else:  # val < low
+            deviation_pct = (low - val) / abs(low) if low != 0 else 1.0
+
+        if deviation_pct > 0.20:
             return "see_doctor"
-        deviation = min(abs(val - low), abs(val - high)) / span
-        if deviation > 0.5:
-            return "see_doctor"
-        if deviation > 0.20 or flag in ("H", "L", "HIGH", "LOW", "*"):
-            return "see_doctor" if deviation > 0.20 else "monitor"
-        return "monitor"
+        # Mildly outside range
+        return "see_doctor" if flagged else "monitor"
     except (ValueError, TypeError):
-        if flag in ("H", "L", "HIGH", "LOW", "*"):
+        # Non-numeric value
+        sval = str(param.get("value", "")).upper()
+        if sval in ("POSITIVE", "REACTIVE"):
             return "see_doctor"
-        if str(param.get("value", "")).upper() == "POSITIVE":
+        if flagged:
             return "see_doctor"
         return "monitor"
 
