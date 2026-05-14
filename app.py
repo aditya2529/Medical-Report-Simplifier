@@ -1,8 +1,14 @@
+import html
+import logging
 import streamlit as st
 from extractor import extract_parameters, annotate_status
 from explainer import explain_parameters
 from pdf_generator import generate_pdf
 from translations import t, T
+
+logger = logging.getLogger(__name__)
+# Audit #8: enforce 5 MB cap on uploads
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -122,30 +128,42 @@ def _build_whatsapp_text(report_type: str, params: list[dict], lang: str) -> str
 
 
 def render_param_card(p: dict, lang: str):
+    # Audit #7 — every PDF-derived string is escaped before going into HTML.
+    # Status, badge HTML, ref-range markup, and 'verify_badge' are produced
+    # by us and therefore safe; the user-supplied fields are NOT.
     status = p.get("status", "normal")
     badge  = _status_badge(status, lang)
     unit   = p.get("unit", "")
-    val_display = f"{p['value']} {unit}".strip()
+    name_safe = html.escape(str(p.get("name", "")))
+    unit_safe = html.escape(str(unit))
+    val_safe  = html.escape(f"{p.get('value', '')} {unit}".strip())
 
     ref_low, ref_high = p.get("ref_low"), p.get("ref_high")
     ref_str = ""
     if ref_low is not None and ref_high is not None:
-        ref_str = f'<span class="ref-range">{t(lang, "reference")}: {ref_low}–{ref_high} {unit}</span>'
+        ref_str = (f'<span class="ref-range">{t(lang, "reference")}: '
+                   f'{html.escape(str(ref_low))}–{html.escape(str(ref_high))} {unit_safe}</span>')
+    elif ref_high is not None:
+        ref_str = (f'<span class="ref-range">{t(lang, "reference")}: '
+                   f'&lt; {html.escape(str(ref_high))} {unit_safe}</span>')
+    elif ref_low is not None:
+        ref_str = (f'<span class="ref-range">{t(lang, "reference")}: '
+                   f'&gt; {html.escape(str(ref_low))} {unit_safe}</span>')
 
     conf_badge = ""
     if p.get("low_confidence"):
         conf_badge = f'<span class="low-conf-badge">{t(lang, "verify_badge")}</span>'
 
-    what = p.get("what_it_is", "")
-    your = p.get("your_result", "")
+    what_safe = html.escape(p.get("what_it_is", ""))
+    your_safe = html.escape(p.get("your_result", ""))
 
     st.markdown(f"""
 <div class="param-card {status}">
-  <div class="param-name">{p['name']} &nbsp; {badge} &nbsp; {conf_badge}</div>
-  <div class="param-value"><b>{val_display}</b> {ref_str}</div>
+  <div class="param-name">{name_safe} &nbsp; {badge} &nbsp; {conf_badge}</div>
+  <div class="param-value"><b>{val_safe}</b> {ref_str}</div>
   <div><span class="what-label">{t(lang, "what_it_measures")}</span></div>
-  <div class="explanation">{what}</div>
-  <div class="your-result">{your}</div>
+  <div class="explanation">{what_safe}</div>
+  <div class="your-result">{your_safe}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -195,7 +213,16 @@ with st.expander(L("photo_tips_title"), expanded=False):
 
 uploaded = st.file_uploader(L("uploader_label"), type=["pdf", "jpg", "jpeg", "png", "heic"])
 
-analyze_btn = st.button(L("analyse_btn"), type="primary", disabled=uploaded is None, use_container_width=True)
+# Audit #10 — DPDP consent gate. Analyse button disabled until checkbox is ticked.
+# Same checkbox value gates the manual-entry "Analyse" button below.
+consent = st.checkbox(L("consent_label"), value=False, key="consent")
+
+analyze_btn = st.button(
+    L("analyse_btn"),
+    type="primary",
+    disabled=(uploaded is None) or (not consent),
+    use_container_width=True,
+)
 
 # ── Manual entry fallback ─────────────────────────────────────────────────────
 with st.expander(L("manual_title"), expanded=False):
@@ -232,7 +259,8 @@ with st.expander(L("manual_title"), expanded=False):
         st.session_state.manual_rows.append({"name": "", "value": "", "unit": "", "ref_low": "", "ref_high": ""})
         st.rerun()
 
-    if col_analyse.button(L("analyse_manual"), use_container_width=True):
+    # Audit #10 — manual entry also ships data to Groq, so same consent gate applies.
+    if col_analyse.button(L("analyse_manual"), use_container_width=True, disabled=not consent):
         manual_params = []
         for row in st.session_state.manual_rows:
             if not row["name"] or not row["value"]:
@@ -256,14 +284,19 @@ with st.expander(L("manual_title"), expanded=False):
                     st.session_state.params = explained
                     st.session_state.report_type = L("manual_report_type")
                     st.session_state.error = None
-                except Exception as e:
-                    st.session_state.error = str(e)
+                except Exception:
+                    logger.exception("Manual analysis failed")
+                    st.session_state.error = L("err_generic")
 
 # ── Analyse uploaded file ─────────────────────────────────────────────────────
 if analyze_btn and uploaded:
     st.session_state.params = None
     st.session_state.error = None
     file_bytes = uploaded.read()
+    # Audit #8 — reject files >5MB at the boundary, before any LLM/image work.
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        st.error(f"{L('err_prefix')} {L('err_too_large')}")
+        st.stop()
     suffix = uploaded.name.rsplit(".", 1)[-1].lower()
     mime_map = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg",
                 "png": "image/png", "heic": "image/heic"}
@@ -281,9 +314,12 @@ if analyze_btn and uploaded:
         st.session_state.params = explained
         st.session_state.report_type = report_type
         progress.empty()
-    except Exception as e:
+    except Exception:
+        # Audit #9 — never surface raw exception strings to the UI. Full
+        # traceback is logged server-side for the developer.
         progress.empty()
-        st.session_state.error = str(e)
+        logger.exception("Upload analysis failed")
+        st.session_state.error = L("err_generic")
 
 # ── Results ───────────────────────────────────────────────────────────────────
 if st.session_state.error:
@@ -297,8 +333,11 @@ if st.session_state.params:
     # Audit #3 — disclaimer renders ABOVE the chips/cards, not below.
     st.markdown(f'<div class="disclaimer-box">ℹ️ {L("disclaimer")}</div>', unsafe_allow_html=True)
 
+    # Audit #7 — report_type is OCR'd from the user's PDF, escape before inlining
     st.markdown(
-        f'<div class="detection-banner">✅ {L("detected")}: <b>{report_type}</b> · {len(params)} {L("params_found")}</div>',
+        f'<div class="detection-banner">✅ {L("detected")}: '
+        f'<b>{html.escape(str(report_type))}</b> · '
+        f'{len(params)} {L("params_found")}</div>',
         unsafe_allow_html=True,
     )
 

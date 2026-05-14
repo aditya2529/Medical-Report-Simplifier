@@ -20,8 +20,13 @@ T = {
             "📐 Keep the full page in frame",
             "🔍 Hold steady — blur ruins extraction",
         ],
-        "uploader_label":   "Upload your lab report (PDF, JPG, PNG, HEIC — up to 10 MB)",
+        "uploader_label":   "Upload your lab report (PDF, JPG, PNG, HEIC — up to 5 MB)",
         "analyse_btn":      "🔍 Analyse Report",
+        "consent_label":    (
+            "I understand my report will be sent to a third-party AI service (Groq, US-based) "
+            "for processing. No data is stored after the session."
+        ),
+        "privacy_link":     "Privacy details →",
 
         # Manual entry
         "manual_title":     "✏️ Or enter values manually (for handwritten or unclear reports)",
@@ -75,6 +80,8 @@ T = {
         # Errors
         "err_prefix":       "❌",
         "err_hint":         "💡 Try a clearer image, or use **manual entry** above.",
+        "err_generic":      "Something went wrong while analysing your report. Please try again in a moment.",
+        "err_too_large":    "This file is larger than 5 MB. Please upload a smaller PDF or image.",
 
         # Disclaimer (audit #3 — top-of-results banner; "do not act on this")
         "disclaimer": (
@@ -103,8 +110,13 @@ T = {
             "📐 पूरा पेज फ़्रेम में रखें",
             "🔍 कैमरा स्थिर रखें — धुंधली फ़ोटो से डेटा नहीं पढ़ा जा सकता",
         ],
-        "uploader_label":   "अपनी लैब रिपोर्ट अपलोड करें (PDF, JPG, PNG, HEIC — 10 MB तक)",
+        "uploader_label":   "अपनी लैब रिपोर्ट अपलोड करें (PDF, JPG, PNG, HEIC — 5 MB तक)",
         "analyse_btn":      "🔍 रिपोर्ट का विश्लेषण करें",
+        "consent_label":    (
+            "मैं समझता/समझती हूँ कि मेरी रिपोर्ट विश्लेषण के लिए एक तृतीय-पक्ष AI सेवा "
+            "(Groq, अमेरिका) को भेजी जाएगी। सत्र समाप्त होने के बाद कोई डेटा संग्रहीत नहीं किया जाता।"
+        ),
+        "privacy_link":     "गोपनीयता विवरण →",
 
         # Manual entry
         "manual_title":     "✏️ या मानों को मैन्युअली दर्ज करें (हस्तलिखित या अस्पष्ट रिपोर्ट के लिए)",
@@ -158,6 +170,8 @@ T = {
         # Errors
         "err_prefix":       "❌",
         "err_hint":         "💡 स्पष्ट फ़ोटो के साथ फिर कोशिश करें, या ऊपर **मैन्युअल प्रविष्टि** का उपयोग करें।",
+        "err_generic":      "रिपोर्ट का विश्लेषण करते समय कुछ गलत हुआ। कृपया थोड़ी देर बाद फिर कोशिश करें।",
+        "err_too_large":    "यह फ़ाइल 5 MB से बड़ी है। कृपया कोई छोटी PDF या इमेज अपलोड करें।",
 
         # Disclaimer (audit #3 — top-of-results banner; "इसके आधार पर कोई दवा बदलें नहीं")
         "disclaimer": (

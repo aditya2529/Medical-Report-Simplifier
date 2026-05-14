@@ -34,11 +34,17 @@ Example output:
 ]"""
 
 
+MAX_PDF_PAGES = 5    # Audit #8 — cap pages to bound memory + LLM cost
+PDF_RENDER_DPI = 110  # Audit #8 — was 150; 110 keeps OCR usable at ~half memory
+
+
 def _pdf_to_images(pdf_bytes: bytes) -> list[tuple[bytes, str]]:
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     images = []
-    for page in doc:
-        pix = page.get_pixmap(dpi=150)
+    for i, page in enumerate(doc):
+        if i >= MAX_PDF_PAGES:
+            break
+        pix = page.get_pixmap(dpi=PDF_RENDER_DPI)
         images.append((pix.tobytes("png"), "image/png"))
     return images
 

@@ -1,9 +1,11 @@
 import os
 import base64
+import logging
 from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 # Groq vision model (Llama 4 Scout supports images)
 _VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
@@ -61,5 +63,11 @@ def call_llm(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    response = client.chat.completions.create(**kwargs)
-    return response.choices[0].message.content
+    # Audit #9 — never let raw Groq SDK errors (which can echo API key / URL)
+    # surface to the UI. Log full detail server-side, surface a generic message.
+    try:
+        response = client.chat.completions.create(**kwargs)
+        return response.choices[0].message.content
+    except Exception:
+        logger.exception("llm_client: Groq call failed")
+        raise RuntimeError("Our AI service is temporarily unavailable. Please try again in a moment.")
