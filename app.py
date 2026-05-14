@@ -324,7 +324,7 @@ if st.session_state.params:
 
     wa_text = _build_whatsapp_text(report_type, sorted_params, language)
     wa_url = "https://wa.me/?text=" + wa_text.replace(" ", "%20").replace("\n", "%0A")
-    pdf_bytes = generate_pdf(report_type, sorted_params)
+    pdf_bytes = generate_pdf(report_type, sorted_params, language=language)
 
     col_share, col_pdf = st.columns(2)
     col_share.link_button(L("share_whatsapp"), wa_url, use_container_width=True)
