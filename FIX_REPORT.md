@@ -57,7 +57,7 @@ Languages tested: English + Hindi.
 | #33 "Information tool" framing missing before upload | ✅ Fixed | `app.py` — `info-strap` div rendered immediately under hero card, before the trust pills. `translations.py` — `info_tool_strap` in EN ("…does not diagnose or replace your doctor") and HI ("…न तो निदान करता है और न ही आपके डॉक्टर का विकल्प है"). | Strap renders BEFORE the `file_uploader` call (verified by source-index check). EN + HI wording confirmed. |
 | #34 No trust signals in viewport at upload moment | ✅ Fixed | `app.py` — `trust-row` div between hero and "About" expander. 4 pills: 🇮🇳 Made in India · 🔒 No data stored · 📖 Open source · 🆓 Free forever. CSS chip class added in the stylesheet. `translations.py` — all 4 pill labels in EN + HI. | Trust strip renders BEFORE the uploader; all 4 pill keys present in both languages. |
 
-**Commit:** `(pending — about to land)` Trust & identity: real git author, LICENSE, sample download, info-tool framing, trust pills
+**Commit:** `8853a16` Trust & identity: real git author, LICENSE, sample download, info-tool framing, trust pills
 
 Tested with: `_phase3_smoke.py` — 22/22 assertions PASS.
 Languages tested: English + Hindi.
@@ -70,7 +70,7 @@ Languages tested: English + Hindi.
 |---|---|---|
 | 1 — Patient Safety | #1, #2, #3, #4, #5, #30 | `ef4a117` |
 | 2 — Security & Legal | #6, #7, #8, #9, #10 | `09dd015` |
-| 3 — Trust & Identity | #11, #12, #14, #31, #33, #34 | _(this commit)_ |
+| 3 — Trust & Identity | #11, #12, #14, #31, #33, #34 | `8853a16` |
 
 **17 audit findings closed.** Phases 4–7 (UX polish, performance & rate-limit
 handling, Hindi rewrite, advisor recruitment) are intentionally untouched per
