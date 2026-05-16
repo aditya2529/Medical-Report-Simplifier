@@ -109,6 +109,24 @@ st.markdown("""
     .hero-card h1 { font-size: 1.4rem !important; }
     .param-name  { font-size: 1rem; }
     .param-card  { padding: 14px 14px; }
+
+    /* Audit #13/#16/#17 — manual entry table is unusable on phones.
+       Stack any horizontal column row that contains form inputs so each
+       field gets full width. Also give all buttons a 48px tap target. */
+    [data-testid="stHorizontalBlock"]:has([data-testid="stTextInput"]),
+    [data-testid="stHorizontalBlock"]:has([data-testid="stNumberInput"]) {
+      flex-direction: column;
+      gap: 8px;
+    }
+    .stButton > button { min-height: 48px; }
+  }
+
+  /* Audit #19 — extra-small phones (320px iPhone SE class). The hero tagline
+     was wrapping into 3 lines and pushing the upload zone below the fold. */
+  @media (max-width: 380px) {
+    .hero-card h1 { font-size: 1.25rem !important; }
+    .hero-card p  { font-size: 0.88rem; }
+    .hero-card    { padding: 16px 18px; }
   }
 </style>
 """, unsafe_allow_html=True)
@@ -118,6 +136,18 @@ LANG_CODES = {"English": "english", "हिन्दी (Hindi)": "hindi"}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+def _to_float_or_none(x):
+    """Coerce a stored manual-entry value (string from a prior text_input
+    run, or already-float from st.number_input) into a float or None. Used
+    when migrating session_state schema and when reading user input back."""
+    if x is None or x == "":
+        return None
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
 def _status_badge(status: str, lang: str) -> str:
     label_map = {
         "normal":     t(lang, "normal"),
@@ -215,7 +245,9 @@ for key in ("params", "report_type", "error"):
     if key not in st.session_state:
         st.session_state[key] = None
 if "manual_rows" not in st.session_state:
-    st.session_state.manual_rows = [{"name": "", "value": "", "unit": "", "ref_low": "", "ref_high": ""}]
+    # Audit #16 — value/ref_low/ref_high are numeric; storing None for empty
+    # so st.number_input renders a blank field instead of refusing 0.
+    st.session_state.manual_rows = [{"name": "", "value": None, "unit": "", "ref_low": None, "ref_high": None}]
 
 # ── Language picker (always visible up top) ───────────────────────────────────
 # Render this BEFORE other UI so language switch reflows everything below
@@ -310,22 +342,27 @@ with st.expander(L("manual_title"), expanded=False):
 
     rows_to_keep = []
     for i, row in enumerate(st.session_state.manual_rows):
-        c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 1.5, 1.5, 1.5, 0.6])
+        # Audit #17 — delete column widened 0.6 → 1.0 so the ✕ button has a
+        # 48px tap target on mobile (CSS bumps min-height too).
+        c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 1.5, 1.5, 1.5, 1.0])
         name = c1.text_input(L("col_test"),  value=row["name"], key=f"mn_{i}",
                              label_visibility="collapsed" if i > 0 else "visible",
                              placeholder=L("ph_test_name"))
-        val  = c2.text_input(L("col_value"), value=row["value"], key=f"mv_{i}",
-                             label_visibility="collapsed" if i > 0 else "visible",
-                             placeholder=L("ph_value"))
+        # Audit #16 — numeric fields use st.number_input so mobile browsers
+        # show the numeric keyboard instead of the full alphanumeric keyboard.
+        # No `placeholder=` support on number_input; the label still acts as a hint.
+        val  = c2.number_input(L("col_value"), value=_to_float_or_none(row["value"]),
+                               step=0.01, format="%g", key=f"mv_{i}",
+                               label_visibility="collapsed" if i > 0 else "visible")
         unit = c3.text_input(L("col_unit"),  value=row["unit"], key=f"mu_{i}",
                              label_visibility="collapsed" if i > 0 else "visible",
                              placeholder=L("ph_unit"))
-        rl   = c4.text_input(L("col_ref_low"),  value=row["ref_low"],  key=f"rl_{i}",
-                             label_visibility="collapsed" if i > 0 else "visible",
-                             placeholder=L("ph_ref_low"))
-        rh   = c5.text_input(L("col_ref_high"), value=row["ref_high"], key=f"rh_{i}",
-                             label_visibility="collapsed" if i > 0 else "visible",
-                             placeholder=L("ph_ref_high"))
+        rl   = c4.number_input(L("col_ref_low"),  value=_to_float_or_none(row["ref_low"]),
+                               step=0.01, format="%g", key=f"rl_{i}",
+                               label_visibility="collapsed" if i > 0 else "visible")
+        rh   = c5.number_input(L("col_ref_high"), value=_to_float_or_none(row["ref_high"]),
+                               step=0.01, format="%g", key=f"rh_{i}",
+                               label_visibility="collapsed" if i > 0 else "visible")
         keep = True
         if i > 0 and c6.button("✕", key=f"del_{i}"):
             keep = False
@@ -336,27 +373,29 @@ with st.expander(L("manual_title"), expanded=False):
 
     col_add, col_analyse = st.columns([1, 2])
     if col_add.button(L("add_row")):
-        st.session_state.manual_rows.append({"name": "", "value": "", "unit": "", "ref_low": "", "ref_high": ""})
+        st.session_state.manual_rows.append({"name": "", "value": None, "unit": "", "ref_low": None, "ref_high": None})
         st.rerun()
 
     # Audit #10 — manual entry also ships data to Groq, so same consent gate applies.
     if col_analyse.button(L("analyse_manual"), use_container_width=True, disabled=not consent):
         manual_params = []
         for row in st.session_state.manual_rows:
-            if not row["name"] or not row["value"]:
+            # Audit #16 — value/ref fields are now floats-or-None from
+            # st.number_input. Skip rows missing name or value.
+            if not row["name"] or row["value"] in (None, ""):
                 continue
-            try:
-                rl = float(row["ref_low"])  if row["ref_low"]  else None
-                rh = float(row["ref_high"]) if row["ref_high"] else None
-            except ValueError:
-                rl = rh = None
             manual_params.append({
                 "name": row["name"], "value": row["value"], "unit": row["unit"],
-                "ref_low": rl, "ref_high": rh, "flag": "",
+                "ref_low": _to_float_or_none(row["ref_low"]),
+                "ref_high": _to_float_or_none(row["ref_high"]),
+                "flag": "",
             })
         if not manual_params:
             st.warning(L("manual_warn"))
         else:
+            # Audit #20 — same slow-network reassurance as the upload path.
+            hint = st.empty()
+            hint.caption(f"⏳ {L('slow_hint')}")
             with st.spinner(L("p_explaining")):
                 try:
                     annotated = annotate_status(manual_params)
@@ -371,6 +410,8 @@ with st.expander(L("manual_title"), expanded=False):
                 except Exception:
                     logger.exception("Manual analysis failed")
                     st.session_state.error = L("err_generic")
+                finally:
+                    hint.empty()
 
 # ── Analyse uploaded file ─────────────────────────────────────────────────────
 if analyze_btn and uploaded:
@@ -395,32 +436,33 @@ if analyze_btn and uploaded:
                     "png": "image/png", "heic": "image/heic"}
         mime = mime_map.get(suffix, "image/jpeg")
 
-        progress = st.progress(0, text=L("p_reading"))
-        try:
-            progress.progress(20, text=L("p_extracting"))
-            params, report_type = extract_parameters(file_bytes, mime)
-            progress.progress(55, text=L("p_analysing"))
-            annotated = annotate_status(params)
-            progress.progress(75, text=L("p_explaining"))
-            explained = explain_parameters(annotated, age=age, gender=gender, language=language)
-            progress.progress(100, text=L("p_done"))
-            st.session_state.params = explained
-            st.session_state.report_type = report_type
-            progress.empty()
-        except LLMBusyError:
-            # Audit #23 — rate-limit-specific message so the user waits, not re-uploads.
-            progress.empty()
-            logger.warning("Upload analysis: LLM busy (rate-limited)")
-            st.session_state.error = L("err_busy")
-            # Clear the hash so a retry actually re-runs the pipeline.
-            st.session_state.last_analysis_hash = None
-        except Exception:
-            # Audit #9 — never surface raw exception strings to the UI. Full
-            # traceback is logged server-side for the developer.
-            progress.empty()
-            logger.exception("Upload analysis failed")
-            st.session_state.error = L("err_generic")
-            st.session_state.last_analysis_hash = None
+        # Audit #20 — discrete progress jumps (20%, 55%, 75%) implied an
+        # accuracy we didn't have; the bar froze for 8–15s at each tier on
+        # slow connections, which looked broken. A spinner + a slow-network
+        # reassurance line is honest and works the same on every connection.
+        hint = st.empty()
+        hint.caption(f"⏳ {L('slow_hint')}")
+        with st.spinner(L("p_explaining")):
+            try:
+                params, report_type = extract_parameters(file_bytes, mime)
+                annotated = annotate_status(params)
+                explained = explain_parameters(annotated, age=age, gender=gender, language=language)
+                st.session_state.params = explained
+                st.session_state.report_type = report_type
+            except LLMBusyError:
+                # Audit #23 — rate-limit-specific message so the user waits, not re-uploads.
+                logger.warning("Upload analysis: LLM busy (rate-limited)")
+                st.session_state.error = L("err_busy")
+                # Clear the hash so a retry actually re-runs the pipeline.
+                st.session_state.last_analysis_hash = None
+            except Exception:
+                # Audit #9 — never surface raw exception strings to the UI. Full
+                # traceback is logged server-side for the developer.
+                logger.exception("Upload analysis failed")
+                st.session_state.error = L("err_generic")
+                st.session_state.last_analysis_hash = None
+            finally:
+                hint.empty()
 
 # ── Results ───────────────────────────────────────────────────────────────────
 if st.session_state.error:
@@ -471,7 +513,12 @@ if st.session_state.params:
     # the prior result instead of regenerating (~700 ms / PDF on mobile).
     params_key = json.dumps(sorted_params, sort_keys=True, default=str)
     wa_text = _cached_build_whatsapp_text(report_type, params_key, language)
-    wa_url = "https://wa.me/?text=" + wa_text.replace(" ", "%20").replace("\n", "%0A")
+    # Audit #18 — replace the naive 2-char .replace() with urllib.parse.quote.
+    # The old version mangled Devanagari (`आ` became `%E0%A4%86` only by
+    # accident if the byte happened to be a space), broke on `&`/`#`/`*`,
+    # and produced invalid URLs for emoji. quote() with safe='' is the
+    # WhatsApp-documented encoding for share links.
+    wa_url = "https://wa.me/?text=" + quote(wa_text, safe='')
     pdf_bytes = _cached_generate_pdf(report_type, params_key, language)
 
     col_share, col_pdf = st.columns(2)

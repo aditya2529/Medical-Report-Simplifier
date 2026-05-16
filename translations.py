@@ -4,7 +4,10 @@ T = {
     "english": {
         # Hero
         "app_title":      "🩺 ClarityMed",
-        "app_tagline":    "Understand your lab report in plain language — in under 15 seconds.",
+        # Audit #20 — removed the falsifiable "in under 15 seconds" claim. Real
+        # latency on slow 3G with the LLM call is often 20–40s and we won't
+        # screenshot well being caught lying on the homepage.
+        "app_tagline":    "Lab reports in plain language — English or Hindi",
 
         # Settings
         "language":       "Language",
@@ -118,7 +121,9 @@ T = {
     "hindi": {
         # Hero
         "app_title":      "🩺 ClarityMed",
-        "app_tagline":    "अपनी लैब रिपोर्ट को सरल भाषा में समझें — सिर्फ़ 15 सेकंड में।",
+        # Audit #19 + #20 — short enough to fit on a 320px Android viewport
+        # without wrapping the hero card. Drops the false "15 seconds" claim.
+        "app_tagline":    "लैब रिपोर्ट, सरल भाषा में।",
 
         # Settings
         "language":       "भाषा",
