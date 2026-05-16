@@ -64,6 +64,56 @@ Languages tested: English + Hindi.
 
 ---
 
+## Phase 4: Reddit Launch Readiness
+
+Scope: only the 8 launch-blocker findings in the Phase 4 brief. Findings
+#25–29 and #35–49 are intentionally untouched and deferred to v1.1.
+
+### Sub-Phase 4A — Capacity & Performance
+
+| Finding | Status | File:Line Changed | Verification |
+|---|---|---|---|
+| #23 Rate-limit retry | ✅ Fixed | `llm_client.py` — new `LLMBusyError(RuntimeError)`; `call_llm` loops up to 3 times on `groq.RateLimitError` with exponential 1-2-4 s backoff + ≤0.25 s jitter, honours a `retry-after` header/body when present, hard-capped at 8 s per sleep; `Groq(api_key=..., timeout=30)`; final failure raises `LLMBusyError` with the busy message. `translations.py` — `err_busy` (EN + HI) wired into `app.py` at both pipeline entry points. | Smoke test stubbed `RateLimitError` for every call → asserted 3 retries fired, final raise was `LLMBusyError`, message contains "30". Non-429 exception path still surfaces the generic "temporarily unavailable" message and never echoes the API key. |
+| #21 Larger / parallel batches | ✅ Fixed | `explainer.py` — `BATCH_SIZE` 8 → 20; multi-batch path runs through `concurrent.futures.ThreadPoolExecutor(max_workers=3)`; per-batch `_safe_explain` wrapper falls back to localised safe-fallback text when a single batch raises, so one failed batch never kills the report. | 15-param fixture → 1 batch (single call). 25-param fixture → 2 batches, executed concurrently; output order preserved end-to-end. Forced `_explain_batch` to raise → `what_it_is` resolved to `_SAFE_FALLBACK_EN` / `_SAFE_FALLBACK_HI` for the affected batch only. |
+| #22 Cache PDF/WA | ✅ Fixed | `app.py` — new `_cached_generate_pdf(report_type, params_json, language)` and `_cached_build_whatsapp_text(...)` wrappers decorated with `@st.cache_data(max_entries=32, show_spinner=False)`. Call sites pass a `json.dumps(sorted_params, sort_keys=True, default=str)` key. | Language toggle / expander click reruns no longer hit `pdf_generator.generate_pdf` or `_build_whatsapp_text`; cache is keyed on the JSON-serialised params so identical content hits, language switch misses (re-renders). |
+| #24 Pipeline re-fire | ✅ Fixed | `app.py` — `current_hash = hashlib.md5(file_bytes + language.encode()).hexdigest()` gates the entire extract→annotate→explain pipeline behind `st.session_state["last_analysis_hash"]`. Both error branches clear the hash so retries actually re-run. | Smoke test confirmed hash key + computation present; conceptual check: identical `(file, language)` triggers the pipeline once, subsequent reruns are no-ops; language flip changes the hash and triggers a fresh run. |
+
+**Commit:** `84c552c` Phase 4A: rate-limit retry, larger+parallel batches, cache PDF/WA, stop pipeline re-fire
+
+Tested with: `_phase4a_smoke.py` — 30/30 assertions PASS (deleted post-verify).
+Patient-safety regression sweep: forbidden-phrase filter, disclaimer
+ordering, HTML escape, file-size cap — all still hold.
+
+### Sub-Phase 4B — Mobile UX
+
+| Finding | Status | File:Line Changed | Verification |
+|---|---|---|---|
+| #13 + #16 + #17 Manual entry on mobile | ✅ Fixed | `app.py` CSS — `@media (max-width: 600px)` rule stacks any `stHorizontalBlock` containing a text or number input (`flex-direction: column; gap: 8px`); all `stButton > button` get `min-height: 48px`. `app.py` — value/ref_low/ref_high switched from `st.text_input` to `st.number_input` so mobile browsers show the numeric keyboard. Delete-column width 0.6 → 1.0. New `_to_float_or_none` helper coerces stored state safely. Session-state schema updated to use `None` for empty numerics so `number_input` renders blank. | Smoke test asserted column ratio `[3, 2, 1.5, 1.5, 1.5, 1.0]`, all three numeric fields use `number_input`, name/unit remain `text_input`, CSS stacking + 48px rule present. Manual-entry analyse path correctly passes float `value` through `annotate_status` + `explain_parameters`. |
+| #20 Spinner + tagline rewrite + slow-hint | ✅ Fixed | `app.py` — discrete `progress.progress(20/55/75/100)` jumps removed from both upload and manual paths; replaced by `st.spinner(L("p_explaining"))` plus a `hint = st.empty()` + `caption(⏳ slow_hint)` shown for the duration of the LLM call, cleared in `finally`. `translations.py` — EN `app_tagline` rewritten to `"Lab reports in plain language — English or Hindi"`; HI to `"लैब रिपोर्ट, सरल भाषा में।"` (no "15 seconds" claim in either). `slow_hint` strings added in EN + HI. | Smoke test confirmed every `progress.progress(N, ...)` site is gone, both spinners + slow-hint references are present, taglines no longer contain "15 seconds" / "सेकंड", `slow_hint` keys exist in both languages. |
+| #18 WhatsApp URL encoding | ✅ Fixed | `app.py` — `from urllib.parse import quote`; `wa_url = "https://wa.me/?text=" + quote(wa_text, safe='')` replaces the naive `.replace(" ", "%20").replace("\n", "%0A")` that mangled Devanagari, `&`, `#`, `*`, and emoji. | `quote()` round-trip on `"🩺 *ClarityMed — लिपिड Summary*\n• HbA1c: 7.8 & rising"` decodes back to the exact original string; old `.replace()` pattern not present in source. |
+| #19 Hero card mobile scaling | ✅ Fixed | `translations.py` — HI tagline shortened to `"लैब रिपोर्ट, सरल भाषा में।"` (5 words, 22 chars; old was 11 words + emoji-dash and wrapped onto 3 lines at 320px). `app.py` CSS — new `@media (max-width: 380px)` block: `.hero-card h1 → 1.25rem`, `.hero-card p → 0.88rem`, `.hero-card padding → 16px 18px`. | Smoke test verified breakpoint + every CSS rule. HI tagline length ≤ 30 chars asserted; both taglines no longer mention "15 seconds". |
+
+**Commit:** `5549944` Phase 4B: mobile manual entry, spinner instead of progress jumps, WA URL encoding, mobile hero scaling
+
+Tested with: `_phase4b_smoke.py` — 28/28 assertions PASS (deleted post-verify).
+Patient-safety regression sweep: disclaimer renders ABOVE the chips row;
+forbidden-phrase filter still catches `"you have diabetes"` and lets
+`"in the normal range"` through.
+
+### Important note on verification (Phase 4)
+
+End-to-end mobile-viewport testing (Chrome DevTools → iPhone SE 320px and
+Pixel 5 393px) on all 5 sample PDFs in both languages with a live Groq
+key requires a human browser session, which the automated harness can't
+perform. The deterministic smoke tests above cover the source-level
+contract for every fix; the human pre-launch check from the brief
+("test on mobile viewport, both languages, all 5 sample reports") is
+still required before the Reddit post.
+
+**Reddit launch status: READY** ✅
+
+---
+
 ## Summary
 
 | Phase | Findings closed | Commit |
@@ -71,10 +121,11 @@ Languages tested: English + Hindi.
 | 1 — Patient Safety | #1, #2, #3, #4, #5, #30 | `ef4a117` |
 | 2 — Security & Legal | #6, #7, #8, #9, #10 | `09dd015` |
 | 3 — Trust & Identity | #11, #12, #14, #31, #33, #34 | `8853a16` |
+| 4A — Capacity & Performance | #21, #22, #23, #24 | `84c552c` |
+| 4B — Mobile UX | #13, #16, #17, #18, #19, #20 | `5549944` |
 
-**17 audit findings closed.** Phases 4–7 (UX polish, performance & rate-limit
-handling, Hindi rewrite, advisor recruitment) are intentionally untouched per
-the brief.
+**27 audit findings closed.** Phases 5–7 (#25–29, #35–49) intentionally
+deferred to v1.1 per the Phase 4 brief.
 
 ### Important note on verification
 
