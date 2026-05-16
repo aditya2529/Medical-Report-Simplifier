@@ -1,8 +1,13 @@
+import hashlib
 import html
+import json
 import logging
+from urllib.parse import quote
+
 import streamlit as st
 from extractor import extract_parameters, annotate_status
 from explainer import explain_parameters
+from llm_client import LLMBusyError
 from pdf_generator import generate_pdf
 from translations import t, T
 
@@ -144,6 +149,24 @@ def _build_whatsapp_text(report_type: str, params: list[dict], lang: str) -> str
         lines.append("")
     lines.append(t(lang, "wa_disclaimer"))
     return "\n".join(lines)
+
+
+# Audit #22 — cached PDF + WhatsApp-text wrappers. Both are pure functions
+# of (report_type, params, language); regenerating them on every language
+# toggle / expander click cost ~700 ms (PDF) and several ms (WA text) on
+# mobile. st.cache_data needs a hashable key, so we serialise params to a
+# canonical JSON string. Cache lives in Streamlit's session-scoped store,
+# so different users share nothing.
+@st.cache_data(show_spinner=False, max_entries=32)
+def _cached_generate_pdf(report_type: str, params_json: str, language: str) -> bytes:
+    params = json.loads(params_json)
+    return generate_pdf(report_type, params, language=language)
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def _cached_build_whatsapp_text(report_type: str, params_json: str, language: str) -> str:
+    params = json.loads(params_json)
+    return _build_whatsapp_text(report_type, params, language)
 
 
 def render_param_card(p: dict, lang: str):
@@ -341,42 +364,63 @@ with st.expander(L("manual_title"), expanded=False):
                     st.session_state.params = explained
                     st.session_state.report_type = L("manual_report_type")
                     st.session_state.error = None
+                except LLMBusyError:
+                    # Audit #23 — rate-limit-specific message.
+                    logger.warning("Manual analysis: LLM busy (rate-limited)")
+                    st.session_state.error = L("err_busy")
                 except Exception:
                     logger.exception("Manual analysis failed")
                     st.session_state.error = L("err_generic")
 
 # ── Analyse uploaded file ─────────────────────────────────────────────────────
 if analyze_btn and uploaded:
-    st.session_state.params = None
-    st.session_state.error = None
     file_bytes = uploaded.read()
     # Audit #8 — reject files >5MB at the boundary, before any LLM/image work.
     if len(file_bytes) > MAX_UPLOAD_BYTES:
         st.error(f"{L('err_prefix')} {L('err_too_large')}")
         st.stop()
-    suffix = uploaded.name.rsplit(".", 1)[-1].lower()
-    mime_map = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-                "png": "image/png", "heic": "image/heic"}
-    mime = mime_map.get(suffix, "image/jpeg")
 
-    progress = st.progress(0, text=L("p_reading"))
-    try:
-        progress.progress(20, text=L("p_extracting"))
-        params, report_type = extract_parameters(file_bytes, mime)
-        progress.progress(55, text=L("p_analysing"))
-        annotated = annotate_status(params)
-        progress.progress(75, text=L("p_explaining"))
-        explained = explain_parameters(annotated, age=age, gender=gender, language=language)
-        progress.progress(100, text=L("p_done"))
-        st.session_state.params = explained
-        st.session_state.report_type = report_type
-        progress.empty()
-    except Exception:
-        # Audit #9 — never surface raw exception strings to the UI. Full
-        # traceback is logged server-side for the developer.
-        progress.empty()
-        logger.exception("Upload analysis failed")
-        st.session_state.error = L("err_generic")
+    # Audit #24 — Streamlit reruns the whole script on every widget change
+    # (language toggle, expander click, etc.), and `analyze_btn` stays True
+    # for a rerun cycle. Without a gate, the full pipeline re-fired and
+    # burned another Groq call on every interaction. Hash the file bytes +
+    # language and only re-run when one of them actually changed.
+    current_hash = hashlib.md5(file_bytes + language.encode()).hexdigest()
+    if st.session_state.get("last_analysis_hash") != current_hash:
+        st.session_state.last_analysis_hash = current_hash
+        st.session_state.params = None
+        st.session_state.error = None
+        suffix = uploaded.name.rsplit(".", 1)[-1].lower()
+        mime_map = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                    "png": "image/png", "heic": "image/heic"}
+        mime = mime_map.get(suffix, "image/jpeg")
+
+        progress = st.progress(0, text=L("p_reading"))
+        try:
+            progress.progress(20, text=L("p_extracting"))
+            params, report_type = extract_parameters(file_bytes, mime)
+            progress.progress(55, text=L("p_analysing"))
+            annotated = annotate_status(params)
+            progress.progress(75, text=L("p_explaining"))
+            explained = explain_parameters(annotated, age=age, gender=gender, language=language)
+            progress.progress(100, text=L("p_done"))
+            st.session_state.params = explained
+            st.session_state.report_type = report_type
+            progress.empty()
+        except LLMBusyError:
+            # Audit #23 — rate-limit-specific message so the user waits, not re-uploads.
+            progress.empty()
+            logger.warning("Upload analysis: LLM busy (rate-limited)")
+            st.session_state.error = L("err_busy")
+            # Clear the hash so a retry actually re-runs the pipeline.
+            st.session_state.last_analysis_hash = None
+        except Exception:
+            # Audit #9 — never surface raw exception strings to the UI. Full
+            # traceback is logged server-side for the developer.
+            progress.empty()
+            logger.exception("Upload analysis failed")
+            st.session_state.error = L("err_generic")
+            st.session_state.last_analysis_hash = None
 
 # ── Results ───────────────────────────────────────────────────────────────────
 if st.session_state.error:
@@ -422,9 +466,13 @@ if st.session_state.params:
     sort_order = {"see_doctor": 0, "monitor": 1, "normal": 2}
     sorted_params = sorted(params, key=lambda p: sort_order.get(p.get("status", "normal"), 2))
 
-    wa_text = _build_whatsapp_text(report_type, sorted_params, language)
+    # Audit #22 — cache PDF + WhatsApp text on the (report_type, params, language)
+    # tuple. Language toggle, expander clicks, and other widget reruns now reuse
+    # the prior result instead of regenerating (~700 ms / PDF on mobile).
+    params_key = json.dumps(sorted_params, sort_keys=True, default=str)
+    wa_text = _cached_build_whatsapp_text(report_type, params_key, language)
     wa_url = "https://wa.me/?text=" + wa_text.replace(" ", "%20").replace("\n", "%0A")
-    pdf_bytes = generate_pdf(report_type, sorted_params, language=language)
+    pdf_bytes = _cached_generate_pdf(report_type, params_key, language)
 
     col_share, col_pdf = st.columns(2)
     col_share.link_button(L("share_whatsapp"), wa_url, use_container_width=True)

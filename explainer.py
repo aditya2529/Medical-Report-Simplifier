@@ -1,9 +1,19 @@
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from llm_client import call_llm
 
 logger = logging.getLogger(__name__)
+
+# Audit #21 — BATCH_SIZE raised 8 → 20 so the typical 8–18 param report
+# becomes a single LLM call. For larger reports (rare; lipid + CBC + LFT
+# combined ≈ 25 params), batches run concurrently with a small thread pool
+# so wall-clock latency stays close to one call. A per-batch try/except
+# falls back to safe-fallback text for that batch only — one failed batch
+# never kills the whole report.
+BATCH_SIZE = 20
+_MAX_PARALLEL_BATCHES = 3
 
 # Audit #5 — word-boundary patterns. The old substring blacklist mangled
 # legitimate text. These patterns trip ONLY on diagnostic / prescriptive
@@ -200,12 +210,35 @@ def explain_parameters(params: list[dict], age: int = None, gender: str = None, 
     if not slim:
         return params
 
-    # Process in batches of 8 to avoid token limits
-    BATCH_SIZE = 8
-    explanations = []
-    for i in range(0, len(slim), BATCH_SIZE):
-        batch = slim[i:i + BATCH_SIZE]
-        explanations.extend(_explain_batch(batch, language=language))
+    # Audit #21 — split into batches and process concurrently when >1 batch.
+    batches = [slim[i:i + BATCH_SIZE] for i in range(0, len(slim), BATCH_SIZE)]
+
+    def _safe_explain(batch: list[dict]) -> list[dict]:
+        try:
+            return _explain_batch(batch, language=language)
+        except Exception as e:
+            logger.warning(
+                "explainer: batch of %d failed (%s) — using safe fallback",
+                len(batch), e,
+            )
+            return [
+                {
+                    "name": item["name"],
+                    "what_it_is": _safe_fallback(language),
+                    "your_result": "",
+                    "status": item.get("status", "normal"),
+                }
+                for item in batch
+            ]
+
+    if len(batches) == 1:
+        explanations = _safe_explain(batches[0])
+    else:
+        explanations = []
+        with ThreadPoolExecutor(max_workers=_MAX_PARALLEL_BATCHES) as ex:
+            # Preserve original order so the merge-by-name lookup is stable.
+            for batch_result in ex.map(_safe_explain, batches):
+                explanations.extend(batch_result)
 
     # Build lookup and merge
     lookup = {e["name"]: e for e in explanations}

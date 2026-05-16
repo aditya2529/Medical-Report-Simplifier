@@ -102,6 +102,10 @@ T = {
         "err_hint":         "💡 Try a clearer image, or use **manual entry** above.",
         "err_generic":      "Something went wrong while analysing your report. Please try again in a moment.",
         "err_too_large":    "This file is larger than 5 MB. Please upload a smaller PDF or image.",
+        # Audit #23 — distinct message for rate-limit so the user knows to wait, not re-upload.
+        "err_busy":         "Our AI service is busy right now. Please try again in 30 seconds.",
+        # Audit #20 — shown after ~8s of waiting so a slow 3G user doesn't think the page froze.
+        "slow_hint":        "Slow connection? This may take up to a minute.",
 
         # Disclaimer (audit #3 — top-of-results banner; "do not act on this")
         "disclaimer": (
@@ -211,6 +215,10 @@ T = {
         "err_hint":         "💡 स्पष्ट फ़ोटो के साथ फिर कोशिश करें, या ऊपर **मैन्युअल प्रविष्टि** का उपयोग करें।",
         "err_generic":      "रिपोर्ट का विश्लेषण करते समय कुछ गलत हुआ। कृपया थोड़ी देर बाद फिर कोशिश करें।",
         "err_too_large":    "यह फ़ाइल 5 MB से बड़ी है। कृपया कोई छोटी PDF या इमेज अपलोड करें।",
+        # Audit #23 — rate-limit-specific message.
+        "err_busy":         "हमारी AI सेवा अभी व्यस्त है। कृपया 30 सेकंड बाद दोबारा कोशिश करें।",
+        # Audit #20 — slow-network reassurance hint.
+        "slow_hint":        "धीमा कनेक्शन? इसमें एक मिनट तक लग सकता है।",
 
         # Disclaimer (audit #3 — top-of-results banner; "इसके आधार पर कोई दवा बदलें नहीं")
         "disclaimer": (
